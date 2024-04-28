@@ -27,6 +27,8 @@ asr = { git = "https://github.com/LiveSplit/asr", features = [
 
 # Bytemuck can be used to define structs that are being read from the game's process.
 bytemuck = { version = "1", features = ["derive", "min_const_generics"] }
+enum-primitive-derive = "0.3.0"
+num-traits = "0.2.18"
 
 [lib]
 crate-type = ["cdylib"]
