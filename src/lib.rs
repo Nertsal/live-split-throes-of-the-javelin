@@ -3,7 +3,7 @@ extern crate alloc;
 
 use alloc::format;
 use asr::{
-    future::next_tick,
+    future::{next_tick, retry},
     game_engine::unity::mono::{self, UnityPointer},
     watcher::Watcher,
     Process,
@@ -14,19 +14,44 @@ use num_traits::FromPrimitive;
 asr::async_main!(stable);
 // asr::panic_handler!();
 
+static PROCESS_NAMES: [&str; 1] = ["Throes of the Javelin.exe"];
+
 async fn main() {
     // Set up some general state and settings.
-    let splits = vec![Split::Start, Split::Key];
-
-    asr::print_message("Hello, World!");
+    let splits = vec![
+        Split::Start,
+        Split::Key,
+        Split::ScreenTransition,
+        Split::ScreenTransition,
+        Split::ScreenTransition,
+        Split::ScreenTransition,
+        Split::Berry,
+        Split::Berry,
+        Split::ScreenTransition,
+        Split::Berry,
+        Split::Berry,
+        Split::Berry,
+        Split::Berry,
+        Split::Berry,
+        Split::Berry,
+        Split::BigBerry,
+    ];
 
     loop {
         asr::print_message("Trying to attach to the game...");
-        let process = Process::wait_attach("Throes of the Javelin.exe").await;
+
+        let process = retry(|| {
+            PROCESS_NAMES.into_iter().find_map(|name| {
+                let p = Process::attach(name);
+                if p.is_some() {
+                    asr::print_message(&format!("Attached to {:?}", name))
+                }
+                p
+            })
+        })
+        .await;
         process
             .until_closes(async {
-                asr::print_message("Attached to the process, reading memory...");
-
                 // Load some initial information from the process.
 
                 let game = GameManagerFinder::wait_attach(&process).await;
@@ -64,7 +89,8 @@ async fn main() {
 
                     if let Some(pair) = berries.update(game.get_berry_count(&process)) {
                         if pair.increased() {
-                            controller.split(Split::Berry(pair.current));
+                            // controller.split(Split::Berry(pair.current));
+                            controller.split(Split::Berry);
                         }
                     }
 
@@ -74,13 +100,13 @@ async fn main() {
                         }
                     }
 
-                    if let Some(pair) = player_state.update(game.get_player_state(&process)) {
-                        if pair.changed() {
-                            if let PlayerState::AutoMoving = pair.current {
-                                controller.split(Split::ScreenTransition);
-                            }
-                        }
-                    }
+                    // if let Some(pair) = player_state.update(game.get_player_state(&process)) {
+                    //     if pair.changed() {
+                    //         if let PlayerState::AutoMoving = pair.current {
+                    //             controller.split(Split::ScreenTransition);
+                    //         }
+                    //     }
+                    // }
 
                     next_tick().await;
                 }
@@ -111,12 +137,14 @@ impl Controller {
                 } else {
                     asr::timer::split();
                 }
+                self.next_split += 1;
             }
         }
     }
 
     pub fn reset(&mut self) {
         asr::timer::reset();
+        self.next_split = 0;
     }
 }
 
@@ -124,7 +152,7 @@ impl Controller {
 enum Split {
     Start,
     Key,
-    Berry(i32),
+    Berry,
     ScreenTransition,
     BigBerry,
 }
@@ -245,7 +273,7 @@ impl PlayerDataPointers {
     pub fn new() -> Self {
         Self {
             berries: UnityPointer::new("GameManager", 0, &["instance", "berryCount"]),
-            key_collected: UnityPointer::new("GameManager", 0, &["instance", "hasKeyCollected"]),
+            key_collected: UnityPointer::new("GameManager", 0, &["instance", "hasCollectedKey"]),
             transition_count: UnityPointer::new("GameManager", 0, &["instance", "transitionCount"]),
             started: UnityPointer::new("UIManager", 0, &["instance", "speedrunStarted"]),
             finished: UnityPointer::new("UIManager", 0, &["instance", "endedSpeedrun"]),
