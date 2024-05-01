@@ -8,8 +8,6 @@ use asr::{
     watcher::Watcher,
     Process,
 };
-use enum_primitive_derive::Primitive;
-use num_traits::FromPrimitive;
 
 asr::async_main!(stable);
 // asr::panic_handler!();
@@ -61,7 +59,6 @@ async fn main() {
                 let mut key_collected = Watcher::<bool>::new();
                 let mut berries = Watcher::<i32>::new();
                 let mut transitions = Watcher::<i32>::new();
-                let mut player_state = Watcher::<PlayerState>::new();
                 let mut started = Watcher::<bool>::new();
                 let mut finished = Watcher::<bool>::new();
 
@@ -99,14 +96,6 @@ async fn main() {
                             controller.split(Split::ScreenTransition);
                         }
                     }
-
-                    // if let Some(pair) = player_state.update(game.get_player_state(&process)) {
-                    //     if pair.changed() {
-                    //         if let PlayerState::AutoMoving = pair.current {
-                    //             controller.split(Split::ScreenTransition);
-                    //         }
-                    //     }
-                    // }
 
                     next_tick().await;
                 }
@@ -155,13 +144,6 @@ enum Split {
     Berry,
     ScreenTransition,
     BigBerry,
-}
-
-#[derive(Debug, PartialEq, Eq, Clone, Copy, Primitive)]
-enum PlayerState {
-    Alive = 0,
-    Dying = 1,
-    AutoMoving = 2,
 }
 
 struct GameManagerFinder {
@@ -222,15 +204,6 @@ impl GameManagerFinder {
             .ok()
     }
 
-    pub fn get_player_state(&self, process: &Process) -> Option<PlayerState> {
-        let state: i32 = self
-            .player_data_pointers
-            .player_state
-            .deref(process, &self.module, &self.image)
-            .ok()?;
-        PlayerState::from_i32(state)
-    }
-
     pub fn get_key_collected(&self, process: &Process) -> Option<bool> {
         self.player_data_pointers
             .key_collected
@@ -266,7 +239,6 @@ struct PlayerDataPointers {
     transition_count: UnityPointer<2>,
     started: UnityPointer<2>,
     finished: UnityPointer<2>,
-    player_state: UnityPointer<2>,
 }
 
 impl PlayerDataPointers {
@@ -277,7 +249,6 @@ impl PlayerDataPointers {
             transition_count: UnityPointer::new("GameManager", 0, &["instance", "transitionCount"]),
             started: UnityPointer::new("UIManager", 0, &["instance", "speedrunStarted"]),
             finished: UnityPointer::new("UIManager", 0, &["instance", "endedSpeedrun"]),
-            player_state: UnityPointer::new("Player", 0, &["instance", "state"]),
         }
     }
 }
