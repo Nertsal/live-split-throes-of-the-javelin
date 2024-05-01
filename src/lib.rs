@@ -5,12 +5,15 @@ use alloc::format;
 use asr::{
     future::{next_tick, retry},
     game_engine::unity::mono::{self, UnityPointer},
+    time::Duration,
     watcher::Watcher,
     Process,
 };
 
 asr::async_main!(stable);
 // asr::panic_handler!();
+
+const GAME_FIXED_DELTA_TIME: f32 = 1.0 / 60.0;
 
 static PROCESS_NAMES: [&str; 1] = ["Throes of the Javelin.exe"];
 
@@ -61,10 +64,23 @@ async fn main() {
                 let mut transitions = Watcher::<i32>::new();
                 let mut started = Watcher::<bool>::new();
                 let mut finished = Watcher::<bool>::new();
+                let mut current_frame = Watcher::<i32>::new();
+                let mut speedrun_frame_start = Watcher::<i32>::new();
 
                 asr::print_message("Entering loop");
                 loop {
-                    // asr::print_message(&format!("{:?}", game.started(&process)));
+                    if let Some(pair) = current_frame.update(game.get_current_frame(&process)) {
+                        if pair.changed() {
+                            let frame = pair.current;
+                            if let Some(pair) = speedrun_frame_start.pair {
+                                let start = pair.current;
+                                let game_time = (frame - start) as f32 * GAME_FIXED_DELTA_TIME;
+                                asr::timer::set_game_time(Duration::seconds_f32(game_time));
+                            }
+                        }
+                    }
+                    speedrun_frame_start.update(game.get_speedrun_frame_start(&process));
+
                     if let Some(pair) = started.update(game.started(&process)) {
                         if pair.changed_to(&true) {
                             controller.split(Split::Start);
@@ -150,6 +166,7 @@ struct GameManagerFinder {
     module: mono::Module,
     image: mono::Image,
 
+    time_data_pointers: TimeDataPointers,
     player_data_pointers: PlayerDataPointers,
 }
 
@@ -159,6 +176,7 @@ impl GameManagerFinder {
             module,
             image,
 
+            time_data_pointers: TimeDataPointers::new(),
             player_data_pointers: PlayerDataPointers::new(),
         }
     }
@@ -219,17 +237,53 @@ impl GameManagerFinder {
     }
 
     pub fn started(&self, process: &Process) -> Option<bool> {
-        self.player_data_pointers
+        self.time_data_pointers
             .started
             .deref(process, &self.module, &self.image)
             .ok()
     }
 
     pub fn finished(&self, process: &Process) -> Option<bool> {
-        self.player_data_pointers
+        self.time_data_pointers
             .finished
             .deref(process, &self.module, &self.image)
             .ok()
+    }
+
+    pub fn get_current_frame(&self, process: &Process) -> Option<i32> {
+        self.time_data_pointers
+            .current_frame
+            .deref(process, &self.module, &self.image)
+            .ok()
+    }
+
+    pub fn get_speedrun_frame_start(&self, process: &Process) -> Option<i32> {
+        self.time_data_pointers
+            .speedrun_frame_start
+            .deref(process, &self.module, &self.image)
+            .ok()
+    }
+}
+
+struct TimeDataPointers {
+    started: UnityPointer<2>,
+    finished: UnityPointer<2>,
+    current_frame: UnityPointer<2>,
+    speedrun_frame_start: UnityPointer<2>,
+}
+
+impl TimeDataPointers {
+    pub fn new() -> Self {
+        Self {
+            started: UnityPointer::new("UIManager", 0, &["instance", "speedrunStarted"]),
+            finished: UnityPointer::new("UIManager", 0, &["instance", "endedSpeedrun"]),
+            current_frame: UnityPointer::new("FrameManager", 0, &["instance", "currentFrame"]),
+            speedrun_frame_start: UnityPointer::new(
+                "UIManager",
+                0,
+                &["instance", "speedrunFrameStart"],
+            ),
+        }
     }
 }
 
@@ -237,8 +291,6 @@ struct PlayerDataPointers {
     berries: UnityPointer<2>,
     key_collected: UnityPointer<2>,
     transition_count: UnityPointer<2>,
-    started: UnityPointer<2>,
-    finished: UnityPointer<2>,
 }
 
 impl PlayerDataPointers {
@@ -247,8 +299,6 @@ impl PlayerDataPointers {
             berries: UnityPointer::new("GameManager", 0, &["instance", "berryCount"]),
             key_collected: UnityPointer::new("GameManager", 0, &["instance", "hasCollectedKey"]),
             transition_count: UnityPointer::new("GameManager", 0, &["instance", "transitionCount"]),
-            started: UnityPointer::new("UIManager", 0, &["instance", "speedrunStarted"]),
-            finished: UnityPointer::new("UIManager", 0, &["instance", "endedSpeedrun"]),
         }
     }
 }
